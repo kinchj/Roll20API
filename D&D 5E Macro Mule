@@ -5,6 +5,7 @@ on("ready",function(){
   const menuName = 'Menu';
   const statsName = 'Stats';
   const rollsName = 'Rolls';
+  const pcattacksName = 'PCAttacks';
   const npcabilitiesName = 'NPCAbilities';
   const spellsName = 'Spells';
   on("chat:message",function(msg){
@@ -179,6 +180,7 @@ on("ready",function(){
        [`${menuName}`,`/w gm %{${mmName}|Menu} &{noerror} `],
        [`${statsName}`,`/w gm %{${mmName}|Stats} &{noerror} `],
        [`${rollsName}`,`/w gm %{${mmName}|Rolls} &{noerror} `],
+       [`${pcattacksName}`,`/w gm %{${mmName}|PCAttacks} &{noerror} `],
        [`${npcabilitiesName}`,`/w gm %{${mmName}|NPCAttacks} &{noerror} `],
        [`${spellsName}`,`/w gm %{${mmName}|Spells} &{noerror} `]
       ]
