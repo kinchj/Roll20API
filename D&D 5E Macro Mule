@@ -1,4 +1,4 @@
-on('ready',setTimeout(()=>{
+on('ready',()=>{
   const scriptName = "CreateMacroMule";
   const version = '2.1'; 
   const mmName = 'MM';
@@ -241,4 +241,4 @@ on('ready',setTimeout(()=>{
       } 
   })
   log(`-=> ${scriptName} script enabled v${version} <=- Macro Mule Name is: ${mmName}`);
-},0));
+});
