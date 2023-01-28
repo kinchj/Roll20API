@@ -1,0 +1,598 @@
+/* FlyMore Start */
+/*
+https://app.roll20.net/forum/post/9880765/script-modification-request-flight-ability-to-set-status-marker-with-no-number#post-9888181
+*/
+
+
+on('ready', () => {
+    const flyStatus     = 'FlyHeight::3784417';
+    const groundStatus = '';
+    const downStatus   = '';
+  
+    const decomposeStatuses = (statuses) =>
+      statuses.split(/,/).reduce((memo,st,idx) => {
+        let parts=st.split(/@/);
+        let entry = {
+          mark: parts[0],
+          num: parseInt(parts[1],10),
+          idx: idx
+        };
+        if(isNaN(entry.num)){
+          entry.num='';
+        }
+        if(entry.mark.length) {
+          memo[entry.mark] = ( memo[entry.mark] && memo[entry.mark].push(entry) && memo[entry.mark]) || [entry] ;
+        }
+        return memo;
+      },{});
+  
+    const composeStatuses = (statuses) => 
+      Object.keys(statuses).reduce((m,k) => {
+          statuses[k].forEach((sd)=>m.push(sd));
+          return m;
+        },[])
+        .sort((a,b)=>a.idx-b.idx)
+        .map( (s) => ('dead'===s.mark ? 'dead' : ( s.mark+(s.num!=='' ? '@'+s.num : ''))) )
+        .join(',');
+  
+  
+    const statusSetter = (op) => {
+      let applyOp = (e) => {
+        let n = Math.round(op(e));
+        if(0 !== n) {
+            return {
+                [n>0 ? flyStatus : downStatus]: 
+                  n.toString()
+                    .split('')
+                    .filter(c=>/\d/.test(c))
+                    .map((c,i) => ({
+                      mark: (n>0 ? flyStatus : downStatus),
+                      num: c,
+                      idx: 10000+i
+                    }))
+                  };
+        } 
+        return {[groundStatus]:[{mark:groundStatus,num:'',idx:10000}]};
+      };
+  
+      const clean = (sm) => {
+        delete sm[downStatus];
+        delete sm[groundStatus];
+        delete sm[flyStatus];
+        return sm;
+      };
+  
+      const getElevation = (sm) => {
+        let accum=0;
+        let marks = [flyStatus,downStatus,groundStatus];
+        let mark = marks.find(s=>sm.hasOwnProperty(s));
+        let dir = (mark === downStatus) ? -1 : 1;
+        if(mark){
+          sm[mark].find(e=>{
+            if(Number.isInteger(e.num)){
+              accum*=10;
+              accum+=e.num;
+              return false;
+            }
+            return true;
+          });
+        }
+        return dir*accum;
+      };
+  
+      const set = (sm,e) => ({...sm,...applyOp(e)});
+      
+      return (t) => {
+        let sm = decomposeStatuses(t.get('statusmarkers'));
+        let e = getElevation(sm);
+        t.set({
+          statusmarkers: composeStatuses(set(clean(sm),e))
+        });
+      };
+    };
+  
+    const processInlinerolls = (msg) => {
+      if(msg.hasOwnProperty('inlinerolls')){
+        return msg.inlinerolls
+          .reduce((m,v,k) => {
+            let ti=v.results.rolls.reduce((m2,v2) => {
+              if(v2.hasOwnProperty('table')){
+                m2.push(v2.results.reduce((m3,v3) => [...m3,v3.tableItem.name],[]).join(", "));
+              }
+              return m2;
+            },[]).join(', ');
+            return [...m,{k:`$[[${k}]]`, v:(ti.length && ti) || v.results.total || 0}];
+          },[])
+          .reduce((m,o) => m.replace(o.k,o.v), msg.content);
+      } else {
+        return msg.content;
+      }
+    };
+  
+    const getChangeOp = (change) => {
+      const ops = {
+        '+': (a,b)=>a+b,
+        '-': (a,b)=>a-b,
+        '/': (a,b)=>a/(b||1),
+        '*': (a,b)=>a*b,
+        '!': (a,b)=>(a?0:b),
+        '=': (a,b)=>b
+      };
+      let txt = `${change}`;
+      let op = (ops.hasOwnProperty(txt[0]) ? txt[0] : "=");
+      let num = parseInt(txt.slice((txt[0]===op) ? 1 : 0));
+      return (n)=>ops[op](n,num);
+    };
+  
+    on('chat:message',msg=>{
+      if('api'===msg.type && /^!fly(\b\s|$)/i.test(msg.content) ){
+        let who = (getObj('player',msg.playerid)||{get:()=>'API'}).get('_displayname');
+  //JK 
+  //      let selected = msg.selected;
+  //      let token = getObj('graphic',msg.selected[0]._id);
+  //      let tokenName = token.get('name');      
+        let tokenName = getObj('graphic',msg.selected[0]._id).get('name');      
+        let args = processInlinerolls(msg).split(/\s+/);
+        if(args.length < 2) {
+          sendChat('FlyMore Script', `/w "${who}" <div><b>Usage:</b> <code>!fly [NUMBER]</code> with tokens selected.  <code>NUMBER</code> can be prefaced with an operation from among: <code>+</code>, <code>-</code>, <code>*</code>, <code>/</code>, or <code>=</code>. Prefacing with an operation will make a relative change, for example, <code>!fly -20</code> will reduce the selected token elevation by 20. Note: to explicitly set a negative elevation, preface with <code>=</code>, for example, <code>!fly =-20</code> will set the elevation to -20 no matter where it is currently.</div>`);
+          return;
+        }
+  
+        let op = getChangeOp(args[1]);
+        let tokens = (msg.selected || [])
+          .map(o => getObj('graphic',o._id))
+          .filter(t => undefined !== t)
+          .filter(t => t.get('subtype') === 'token')
+          ;
+  
+        let ss = statusSetter(op);
+        tokens.map(ss);
+        sendChat('FlyMore Script', `/w "${who}" ${tokenName} flying height set to ${args[1]}`);
+  
+      }
+    });
+  });
+  
+  // CLIMB HEIGHT 
+  
+  on('ready', () => {
+    const climbStatus     = 'ClimbHeight::3786342';
+    const groundStatus = '';
+    const downStatus   = '';
+  
+    const decomposeStatuses = (statuses) =>
+      statuses.split(/,/).reduce((memo,st,idx) => {
+        let parts=st.split(/@/);
+        let entry = {
+          mark: parts[0],
+          num: parseInt(parts[1],10),
+          idx: idx
+        };
+        if(isNaN(entry.num)){
+          entry.num='';
+        }
+        if(entry.mark.length) {
+          memo[entry.mark] = ( memo[entry.mark] && memo[entry.mark].push(entry) && memo[entry.mark]) || [entry] ;
+        }
+        return memo;
+      },{});
+  
+    const composeStatuses = (statuses) => 
+      Object.keys(statuses).reduce((m,k) => {
+          statuses[k].forEach((sd)=>m.push(sd));
+          return m;
+        },[])
+        .sort((a,b)=>a.idx-b.idx)
+        .map( (s) => ('dead'===s.mark ? 'dead' : ( s.mark+(s.num!=='' ? '@'+s.num : ''))) )
+        .join(',');
+  
+  
+    const statusSetter = (op) => {
+      let applyOp = (e) => {
+        let n = Math.round(op(e));
+        if(0 !== n) {
+            return {
+                [n>0 ? climbStatus : downStatus]: 
+                  n.toString()
+                    .split('')
+                    .filter(c=>/\d/.test(c))
+                    .map((c,i) => ({
+                      mark: (n>0 ? climbStatus : downStatus),
+                      num: c,
+                      idx: 10000+i
+                    }))
+                  };
+        } 
+        return {[groundStatus]:[{mark:groundStatus,num:'',idx:10000}]};
+      };
+  
+      const clean = (sm) => {
+        delete sm[downStatus];
+        delete sm[groundStatus];
+        delete sm[climbStatus];
+        return sm;
+      };
+  
+      const getElevation = (sm) => {
+        let accum=0;
+        let marks = [climbStatus,downStatus,groundStatus];
+        let mark = marks.find(s=>sm.hasOwnProperty(s));
+        let dir = (mark === downStatus) ? -1 : 1;
+        if(mark){
+          sm[mark].find(e=>{
+            if(Number.isInteger(e.num)){
+              accum*=10;
+              accum+=e.num;
+              return false;
+            }
+            return true;
+          });
+        }
+        return dir*accum;
+      };
+  
+      const set = (sm,e) => ({...sm,...applyOp(e)});
+      
+      return (t) => {
+        let sm = decomposeStatuses(t.get('statusmarkers'));
+        let e = getElevation(sm);
+        t.set({
+          statusmarkers: composeStatuses(set(clean(sm),e))
+        });
+      };
+    };
+  
+    const processInlinerolls = (msg) => {
+      if(msg.hasOwnProperty('inlinerolls')){
+        return msg.inlinerolls
+          .reduce((m,v,k) => {
+            let ti=v.results.rolls.reduce((m2,v2) => {
+              if(v2.hasOwnProperty('table')){
+                m2.push(v2.results.reduce((m3,v3) => [...m3,v3.tableItem.name],[]).join(", "));
+              }
+              return m2;
+            },[]).join(', ');
+            return [...m,{k:`$[[${k}]]`, v:(ti.length && ti) || v.results.total || 0}];
+          },[])
+          .reduce((m,o) => m.replace(o.k,o.v), msg.content);
+      } else {
+        return msg.content;
+      }
+    };
+  
+    const getChangeOp = (change) => {
+      const ops = {
+        '+': (a,b)=>a+b,
+        '-': (a,b)=>a-b,
+        '/': (a,b)=>a/(b||1),
+        '*': (a,b)=>a*b,
+        '!': (a,b)=>(a?0:b),
+        '=': (a,b)=>b
+      };
+      let txt = `${change}`;
+      let op = (ops.hasOwnProperty(txt[0]) ? txt[0] : "=");
+      let num = parseInt(txt.slice((txt[0]===op) ? 1 : 0));
+      return (n)=>ops[op](n,num);
+    };
+  
+    on('chat:message',msg=>{
+      if('api'===msg.type && /^!climb(\b\s|$)/i.test(msg.content) ){
+        let who = (getObj('player',msg.playerid)||{get:()=>'API'}).get('_displayname');
+        let tokenName = getObj('graphic',msg.selected[0]._id).get('name');      
+        let args = processInlinerolls(msg).split(/\s+/);
+        if(args.length < 2) {
+          sendChat('FlyMore Script', `/w "${who}" <div><b>Usage:</b> <code>!climb [NUMBER]</code> with tokens selected.  <code>NUMBER</code> can be prefaced with an operation from among: <code>+</code>, <code>-</code>, <code>*</code>, <code>/</code>, or <code>=</code>. Prefacing with an operation will make a relative change, for example, <code>!burrow -20</code> will reduce the selected token elevation by 20. Note: to explicitly set a negative elevation, preface with <code>=</code>, for example, <code>!burrow =-20</code> will set the elevation to -20 no matter where it is currently.</div>`);
+          return;
+        }
+  
+        let op = getChangeOp(args[1]);
+        let tokens = (msg.selected || [])
+          .map(o => getObj('graphic',o._id))
+          .filter(t => undefined !== t)
+          .filter(t => t.get('subtype') === 'token')
+          ;
+  
+        let ss = statusSetter(op);
+        tokens.map(ss);
+        sendChat('FlyMore Script', `/w "${who}" ${tokenName} climbing height set to ${args[1]}`);
+    }
+    });
+  });
+  
+  
+  
+  
+  // BURROW DEPTH 
+  
+  on('ready', () => {
+    const burrowStatus     = 'BurrowDepth::3786345';
+    const groundStatus = '';
+    const downStatus   = '';
+  
+    const decomposeStatuses = (statuses) =>
+      statuses.split(/,/).reduce((memo,st,idx) => {
+        let parts=st.split(/@/);
+        let entry = {
+          mark: parts[0],
+          num: parseInt(parts[1],10),
+          idx: idx
+        };
+        if(isNaN(entry.num)){
+          entry.num='';
+        }
+        if(entry.mark.length) {
+          memo[entry.mark] = ( memo[entry.mark] && memo[entry.mark].push(entry) && memo[entry.mark]) || [entry] ;
+        }
+        return memo;
+      },{});
+  
+    const composeStatuses = (statuses) => 
+      Object.keys(statuses).reduce((m,k) => {
+          statuses[k].forEach((sd)=>m.push(sd));
+          return m;
+        },[])
+        .sort((a,b)=>a.idx-b.idx)
+        .map( (s) => ('dead'===s.mark ? 'dead' : ( s.mark+(s.num!=='' ? '@'+s.num : ''))) )
+        .join(',');
+  
+  
+    const statusSetter = (op) => {
+      let applyOp = (e) => {
+        let n = Math.round(op(e));
+        if(0 !== n) {
+            return {
+                [n>0 ? burrowStatus : downStatus]: 
+                  n.toString()
+                    .split('')
+                    .filter(c=>/\d/.test(c))
+                    .map((c,i) => ({
+                      mark: (n>0 ? burrowStatus : downStatus),
+                      num: c,
+                      idx: 10000+i
+                    }))
+                  };
+        } 
+        return {[groundStatus]:[{mark:groundStatus,num:'',idx:10000}]};
+      };
+  
+      const clean = (sm) => {
+        delete sm[downStatus];
+        delete sm[groundStatus];
+        delete sm[burrowStatus];
+        return sm;
+      };
+  
+      const getElevation = (sm) => {
+        let accum=0;
+        let marks = [burrowStatus,downStatus,groundStatus];
+        let mark = marks.find(s=>sm.hasOwnProperty(s));
+        let dir = (mark === downStatus) ? -1 : 1;
+        if(mark){
+          sm[mark].find(e=>{
+            if(Number.isInteger(e.num)){
+              accum*=10;
+              accum+=e.num;
+              return false;
+            }
+            return true;
+          });
+        }
+        return dir*accum;
+      };
+  
+      const set = (sm,e) => ({...sm,...applyOp(e)});
+      
+      return (t) => {
+        let sm = decomposeStatuses(t.get('statusmarkers'));
+        let e = getElevation(sm);
+        t.set({
+          statusmarkers: composeStatuses(set(clean(sm),e))
+        });
+      };
+    };
+  
+    const processInlinerolls = (msg) => {
+      if(msg.hasOwnProperty('inlinerolls')){
+        return msg.inlinerolls
+          .reduce((m,v,k) => {
+            let ti=v.results.rolls.reduce((m2,v2) => {
+              if(v2.hasOwnProperty('table')){
+                m2.push(v2.results.reduce((m3,v3) => [...m3,v3.tableItem.name],[]).join(", "));
+              }
+              return m2;
+            },[]).join(', ');
+            return [...m,{k:`$[[${k}]]`, v:(ti.length && ti) || v.results.total || 0}];
+          },[])
+          .reduce((m,o) => m.replace(o.k,o.v), msg.content);
+      } else {
+        return msg.content;
+      }
+    };
+  
+    const getChangeOp = (change) => {
+      const ops = {
+        '+': (a,b)=>a+b,
+        '-': (a,b)=>a-b,
+        '/': (a,b)=>a/(b||1),
+        '*': (a,b)=>a*b,
+        '!': (a,b)=>(a?0:b),
+        '=': (a,b)=>b
+      };
+      let txt = `${change}`;
+      let op = (ops.hasOwnProperty(txt[0]) ? txt[0] : "=");
+      let num = parseInt(txt.slice((txt[0]===op) ? 1 : 0));
+      return (n)=>ops[op](n,num);
+    };
+  
+    on('chat:message',msg=>{
+      if('api'===msg.type && /^!burrow(\b\s|$)/i.test(msg.content) ){
+        let who = (getObj('player',msg.playerid)||{get:()=>'API'}).get('_displayname');
+        let tokenName = getObj('graphic',msg.selected[0]._id).get('name');      
+        let args = processInlinerolls(msg).split(/\s+/);
+        if(args.length < 2) {
+          sendChat('FlyMore Script', `/w "${who}" <div><b>Usage:</b> <code>!burrow [NUMBER]</code> with tokens selected.  <code>NUMBER</code> can be prefaced with an operation from among: <code>+</code>, <code>-</code>, <code>*</code>, <code>/</code>, or <code>=</code>. Prefacing with an operation will make a relative change, for example, <code>!burrow -20</code> will reduce the selected token elevation by 20. Note: to explicitly set a negative elevation, preface with <code>=</code>, for example, <code>!burrow =-20</code> will set the elevation to -20 no matter where it is currently.</div>`);
+          return;
+        }
+  
+        let op = getChangeOp(args[1]);
+        let tokens = (msg.selected || [])
+          .map(o => getObj('graphic',o._id))
+          .filter(t => undefined !== t)
+          .filter(t => t.get('subtype') === 'token')
+          ;
+  
+        let ss = statusSetter(op);
+        tokens.map(ss);
+        sendChat('FlyMore Script', `/w "${who}" ${tokenName} burrowing depth set to ${args[1]}`);
+    }
+    });
+  });
+  
+  
+  // SWIM DEPTH
+  
+  on('ready', () => {
+    const swimStatus     = 'SwimDepth::3786344';
+    const groundStatus = '';
+    const downStatus   = '';
+  
+    const decomposeStatuses = (statuses) =>
+      statuses.split(/,/).reduce((memo,st,idx) => {
+        let parts=st.split(/@/);
+        let entry = {
+          mark: parts[0],
+          num: parseInt(parts[1],10),
+          idx: idx
+        };
+        if(isNaN(entry.num)){
+          entry.num='';
+        }
+        if(entry.mark.length) {
+          memo[entry.mark] = ( memo[entry.mark] && memo[entry.mark].push(entry) && memo[entry.mark]) || [entry] ;
+        }
+        return memo;
+      },{});
+  
+    const composeStatuses = (statuses) => 
+      Object.keys(statuses).reduce((m,k) => {
+          statuses[k].forEach((sd)=>m.push(sd));
+          return m;
+        },[])
+        .sort((a,b)=>a.idx-b.idx)
+        .map( (s) => ('dead'===s.mark ? 'dead' : ( s.mark+(s.num!=='' ? '@'+s.num : ''))) )
+        .join(',');
+  
+  
+    const statusSetter = (op) => {
+      let applyOp = (e) => {
+        let n = Math.round(op(e));
+        if(0 !== n) {
+            return {
+                [n>0 ? swimStatus : downStatus]: 
+                  n.toString()
+                    .split('')
+                    .filter(c=>/\d/.test(c))
+                    .map((c,i) => ({
+                      mark: (n>0 ? swimStatus : downStatus),
+                      num: c,
+                      idx: 10000+i
+                    }))
+                  };
+        } 
+        return {[groundStatus]:[{mark:groundStatus,num:'',idx:10000}]};
+      };
+  
+      const clean = (sm) => {
+        delete sm[downStatus];
+        delete sm[groundStatus];
+        delete sm[swimStatus];
+        return sm;
+      };
+  
+      const getElevation = (sm) => {
+        let accum=0;
+        let marks = [swimStatus,downStatus,groundStatus];
+        let mark = marks.find(s=>sm.hasOwnProperty(s));
+        let dir = (mark === downStatus) ? -1 : 1;
+        if(mark){
+          sm[mark].find(e=>{
+            if(Number.isInteger(e.num)){
+              accum*=10;
+              accum+=e.num;
+              return false;
+            }
+            return true;
+          });
+        }
+        return dir*accum;
+      };
+  
+      const set = (sm,e) => ({...sm,...applyOp(e)});
+      
+      return (t) => {
+        let sm = decomposeStatuses(t.get('statusmarkers'));
+        let e = getElevation(sm);
+        t.set({
+          statusmarkers: composeStatuses(set(clean(sm),e))
+        });
+      };
+    };
+  
+    const processInlinerolls = (msg) => {
+      if(msg.hasOwnProperty('inlinerolls')){
+        return msg.inlinerolls
+          .reduce((m,v,k) => {
+            let ti=v.results.rolls.reduce((m2,v2) => {
+              if(v2.hasOwnProperty('table')){
+                m2.push(v2.results.reduce((m3,v3) => [...m3,v3.tableItem.name],[]).join(", "));
+              }
+              return m2;
+            },[]).join(', ');
+            return [...m,{k:`$[[${k}]]`, v:(ti.length && ti) || v.results.total || 0}];
+          },[])
+          .reduce((m,o) => m.replace(o.k,o.v), msg.content);
+      } else {
+        return msg.content;
+      }
+    };
+  
+    const getChangeOp = (change) => {
+      const ops = {
+        '+': (a,b)=>a+b,
+        '-': (a,b)=>a-b,
+        '/': (a,b)=>a/(b||1),
+        '*': (a,b)=>a*b,
+        '!': (a,b)=>(a?0:b),
+        '=': (a,b)=>b
+      };
+      let txt = `${change}`;
+      let op = (ops.hasOwnProperty(txt[0]) ? txt[0] : "=");
+      let num = parseInt(txt.slice((txt[0]===op) ? 1 : 0));
+      return (n)=>ops[op](n,num);
+    };
+  
+    on('chat:message',msg=>{
+      if('api'===msg.type && /^!swim(\b\s|$)/i.test(msg.content) ){
+        let who = (getObj('player',msg.playerid)||{get:()=>'API'}).get('_displayname');
+        let tokenName = getObj('graphic',msg.selected[0]._id).get('name');      
+        let args = processInlinerolls(msg).split(/\s+/);
+        if(args.length < 2) {
+          sendChat('FlyMore Script', `/w "${who}" <div><b>Usage:</b> <code>!swim [NUMBER]</code> with tokens selected.  <code>NUMBER</code> can be prefaced with an operation from among: <code>+</code>, <code>-</code>, <code>*</code>, <code>/</code>, or <code>=</code>. Prefacing with an operation will make a relative change, for example, <code>!swim -20</code> will reduce the selected token elevation by 20. Note: to explicitly set a negative elevation, preface with <code>=</code>, for example, <code>!swim =-20</code> will set the elevation to -20 no matter where it is currently.</div>`);
+          return;
+        }
+  
+        let op = getChangeOp(args[1]);
+        let tokens = (msg.selected || [])
+          .map(o => getObj('graphic',o._id))
+          .filter(t => undefined !== t)
+          .filter(t => t.get('subtype') === 'token')
+          ;
+  
+        let ss = statusSetter(op);
+        tokens.map(ss);
+        sendChat('FlyMore Script', `/w "${who}" ${tokenName} swimming depth set to ${args[1]}`);
+      }
+    });
+  });
+  
+/* FlyMore End */
