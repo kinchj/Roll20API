@@ -1,5 +1,6 @@
 // Github:   https://github.com/shdwjk/Roll20API/blob/master/APIHeartBeat/APIHeartBeat.js
 // By:       The Aaron, Arcane Scriptomancer
+// Update:   Jarren
 // Contact:  https://app.roll20.net/users/104025/the-aaron
 // Forum:    https://app.roll20.net/forum/permalink/10447182/
 var API_Meta = API_Meta||{}; //eslint-disable-line no-var
@@ -9,10 +10,10 @@ API_Meta.APIHeartBeat={offset:Number.MAX_SAFE_INTEGER,lineCount:-1};
 const APIHeartBeat = (()=> { // eslint-disable-line no-unused-vars
 
     const scriptName = "APIHeartBeat";
-    const version = '0.5.2';
+    const version = '0.5.3';
     API_Meta.APIHeartBeat.version = version;
     const lastUpdate = 1764806400;
-    const schemaVersion = 0.4;
+    const schemaVersion = 0.5;
     const beatPeriod = 200;
     const devScaleFactor = 5;
     let currentBeatPeriod=0;
@@ -22,7 +23,8 @@ const APIHeartBeat = (()=> { // eslint-disable-line no-unused-vars
     const S = () => state[scriptName];
 
     const assureHelpHandout = (create = false) => {
-        const helpIcon = "https://s3.amazonaws.com/files.d20.io/images/127392204/tAiDP73rpSKQobEYm5QZUw/thumb.png?15878425385";
+      const helpIcon = "https://s3.amazonaws.com/files.d20.io/images/295769190/Abc99DVcre9JA2tKrVDCvA/thumb.png?1658515304";
+
 
         // find handout
         let props = {type:'handout', name:`Help: ${scriptName}`};
@@ -77,6 +79,12 @@ const APIHeartBeat = (()=> { // eslint-disable-line no-unused-vars
             S().config.hourOffset = -5;
             /* break; // intentional dropthrough */ /* falls through */
 
+          case 0.4:
+            S().config.startupAnnounce = true;
+            S().config.macroAction = '--histogram';
+            S().version = schemaVersion;
+            /* break; // intentional dropthrough */ /* falls through */
+
           case 'UpdateSchemaVersion':
             S().version = schemaVersion;
             break;
@@ -93,22 +101,34 @@ const APIHeartBeat = (()=> { // eslint-disable-line no-unused-vars
                 maxSegments: 30,
                 showTime: false,
                 hourOffset: -5,
-                macroAction: " --histogram"
-              }
+                startupAnnounce: true,
+                macroAction: '--histogram'
+              },
+              paused: false
             };
         }
-
-        // ensure new paused flag exists
-        if(!_.has(S(),'paused')){
-            S().paused = false;
-        }
-
       }
+
+      if(!S().config){
+        S().config = {};
+      }
+      if(!_.has(S().config,'startupAnnounce')){
+        S().config.startupAnnounce = true;
+      }
+      if(!_.has(S().config,'macroAction')){
+        S().config.macroAction='--histogram';
+      }
+      if(!_.has(S(),'paused')){
+        S().paused = false;
+      }
+
       HBMacro = getOrCreateMacro();
       assureHelpHandout();
       newTimeSegment();
       startStopBeat();
-      sendCheck('gm');
+      if(S().config.startupAnnounce){
+        sendCheck('gm');
+      }
     };
 
 
@@ -139,7 +159,7 @@ const APIHeartBeat = (()=> { // eslint-disable-line no-unused-vars
     const histogramStyle = ``;
     const historyStyle = ``;
     const graphImg = "https://s3.amazonaws.com/files.d20.io/images/176281994/L28MUxhSDnieHtIl49363Q/thumb.jpg?160477139355";
-    const sendCheck = (who) => sendChat('API Heartbeat',`/w "${who}" <div style="${checkStyle}">API is Running.</div>`);
+    const sendCheck = (who) => sendChat(scriptName,`/w "${who}" <div style="${checkStyle}">API is Running.</div>`);
 
     let latencyData = [];
     const NUM_RECORDS = 600;
@@ -317,8 +337,8 @@ const APIHeartBeat = (()=> { // eslint-disable-line no-unused-vars
       };
       return e.container(e.header(),e.table(rows),e.footer());
     };
-    const sendHistogram = (who) => sendChat('API Heartbeat',`/w "${who}" <div style="${histogramStyle}">${getHistogram()}</div>`);
-    const sendHistory = (who) => sendChat('API Heartbeat',`/w "${who}" <div style="${historyStyle}">${getHistory()}</div>`);
+    const sendHistogram = (who) => sendChat(scriptName,`/w "${who}" <div style="${histogramStyle}">${getHistogram()}</div>`);
+    const sendHistory = (who) => sendChat(scriptName,`/w "${who}" <div style="${historyStyle}">${getHistory()}</div>`);
 
     const arrowCycle = {
         [`↖️`]: `⬆️`, 
@@ -358,7 +378,6 @@ const APIHeartBeat = (()=> { // eslint-disable-line no-unused-vars
     };
     const swordRegex = new RegExp(`(${Object.keys(swordCycle).join('|')})`);
     
-      
     const heartCycle = {
         [`❤️`]: `🧡`, 
         [`🧡`]: `💛`, 
@@ -462,11 +481,6 @@ const APIHeartBeat = (()=> { // eslint-disable-line no-unused-vars
     let lastRunTime = 0;
     
     const updateMacro = () => {
-
-    if(S().paused){
-        return;
-    }
-
       let then = Date.now();
       S().timeSegments[0].end = then;
       let intervalLatency = lastRunTime ? (then-lastRunTime-currentBeatPeriod) : 0;
@@ -477,6 +491,12 @@ const APIHeartBeat = (()=> { // eslint-disable-line no-unused-vars
         S().timeSegments[0].end = now;
         let label = HBMacro.get('name');
 
+        if(S().paused){
+          return;
+        }
+
+        label = label.replace(/^⏸️\s*/, '');
+
         let latency = now-then;
         recordLatency(now,latency,intervalLatency);
 
@@ -484,70 +504,70 @@ const APIHeartBeat = (()=> { // eslint-disable-line no-unused-vars
         switch(S().config.spinner){
           case 'CLOCK': {
               let lastClock = (label.match(clockRegex)||[])[1];
-              let nextClock = Object.keys(clockCycle).includes(lastClock) ? clockCycle[lastClock] : `🕛`;
+              let nextClock = Object.keys(clockCycle).includes(lastClock) ? clockCycle[lastClock] : Object.keys(clockCycle)[0];
               macName+=nextClock;
             }
             break;
 
           case 'SWORD': {
               let lastSword = (label.match(swordRegex)||[])[1];
-              let nextSword = Object.keys(swordCycle).includes(lastSword) ? swordCycle[lastSword] : `⚔️`;
+              let nextSword = Object.keys(swordCycle).includes(lastSword) ? swordCycle[lastSword] : Object.keys(swordCycle)[0];
               macName+=nextSword;
             }
             break;
 
           case 'HEART': {
               let lastHeart = (label.match(heartRegex)||[])[1];
-              let nextHeart = Object.keys(heartCycle).includes(lastHeart) ? heartCycle[lastHeart] : `❤️`;
+              let nextHeart = Object.keys(heartCycle).includes(lastHeart) ? heartCycle[lastHeart] : Object.keys(heartCycle)[0];
               macName+=nextHeart;
             }
             break;
 
           case 'SQUARE': {
               let lastSquare = (label.match(squareRegex)||[])[1];
-              let nextSquare = Object.keys(squareCycle).includes(lastSquare) ? squareCycle[lastSquare] : `🟥️`;
+              let nextSquare = Object.keys(squareCycle).includes(lastSquare) ? squareCycle[lastSquare] : Object.keys(squareCycle)[0];
               macName+=nextSquare;
             }
             break;
 
           case 'CIRCLE': {
               let lastCircle = (label.match(circleRegex)||[])[1];
-              let nextCircle = Object.keys(circleCycle).includes(lastCircle) ? circleCycle[lastCircle] : `🔴`;
+              let nextCircle = Object.keys(circleCycle).includes(lastCircle) ? circleCycle[lastCircle] : Object.keys(circleCycle)[0];
               macName+=nextCircle;
             }
             break;
 
           case 'GROW': {
               let lastGrow = (label.match(growRegex)||[])[1];
-              let nextGrow = Object.keys(growCycle).includes(lastGrow) ? growCycle[lastGrow] : `▪️`;
+              let nextGrow = Object.keys(growCycle).includes(lastGrow) ? growCycle[lastGrow] : Object.keys(growCycle)[0];
               macName+=nextGrow;
             }
             break;
 
           case 'COLORSHAPES': {
               let lastColorShapes = (label.match(colorshapesRegex)||[])[1];
-              let nextColorShapes = Object.keys(colorshapesCycle).includes(lastColorShapes) ? colorshapesCycle[lastColorShapes] : `❤️️`;
+              let nextColorShapes = Object.keys(colorshapesCycle).includes(lastColorShapes) ? colorshapesCycle[lastColorShapes] : Object.keys(colorshapesCycle)[0];
               macName+=nextColorShapes;
             }
             break;
 
           case 'SPINNER': {
               let lastSpinner = (label.match(spinnerRegex)||[])[1];
-              let nextSpinner = Object.keys(spinnerCycle).includes(lastSpinner) ? spinnerCycle[lastSpinner] : `↖️`;
+              let nextSpinner = Object.keys(spinnerCycle).includes(lastSpinner) ? spinnerCycle[lastSpinner] : Object.keys(spinnerCycle)[0];
               macName+=nextSpinner;
             }
             break;
 
           case 'HEARTSPIN': {
               let lastHeartSpin = (label.match(heartspinRegex)||[])[1];
-              let nextHeartSpin = Object.keys(heartspinCycle).includes(lastHeartSpin) ? heartspinCycle[lastHeartSpin] : `💖`;
+              let nextHeartSpin = Object.keys(heartspinCycle).includes(lastHeartSpin) ? heartspinCycle[lastHeartSpin] : Object.keys(heartspinCycle)[0];
               macName+=nextHeartSpin;
             }
             break;
 
           case 'HEARTBEAT': {
               let lastHeartBeat = (label.match(heartbeatRegex)||[])[1];
-              let nextHeartBeat = Object.keys(heartbeatCycle).includes(lastHeartBeat) ? heartbeatCycle[lastHeartBeat] : `❤️`;
+              let nextHeartBeat = Object.keys(heartbeatCycle).includes(lastHeartBeat) ? heartbeatCycle[lastHeartBeat] : Object.keys(heartbeatCycle)[0];
               macName+=nextHeartBeat;
             }
             break;
@@ -555,7 +575,7 @@ const APIHeartBeat = (()=> { // eslint-disable-line no-unused-vars
           case 'ARROW':
           default: {
               let lastArrow = (label.match(arrowRegex)||[])[1];
-              let nextArrow = Object.keys(arrowCycle).includes(lastArrow) ? arrowCycle[lastArrow] : `↖️`;
+              let nextArrow = Object.keys(arrowCycle).includes(lastArrow) ? arrowCycle[lastArrow] : Object.keys(arrowCycle)[0];
               macName+=nextArrow;
             }
             break;
@@ -572,6 +592,7 @@ const APIHeartBeat = (()=> { // eslint-disable-line no-unused-vars
         HBMacro.set({
           name: macName
         });
+
       },0);
     };
 
@@ -633,13 +654,13 @@ const APIHeartBeat = (()=> { // eslint-disable-line no-unused-vars
       SPINNER: 'Spinning Arrow.',
       HEARTSPIN: 'Spinning Hearts.',
       HEARTBEAT: 'Beating Hearts.'
-      };
+    };
 
 
     const getConfigOption_MacroAction = () => makeConfigOptionNum(
-     S().config.macroAction,
-     `!api-heartbeat-config --set-macro-action|?{Macro Action|Histogram,--histogram|Check,--check|Pause,--pause|History,--history}`,
-     `${_h.bold('Macro Action')} controls what command will run when the macro bar button is pressed. Current setting: ${_h.bold(S().config.macroAction)}`
+      S().config.macroAction,
+      `!api-heartbeat-config --set-macro-action|?{Macro Action|Histogram,--histogram|Check,--check|Pause,--pause|History,--history}`,
+      `${_h.bold('Macro Action')} controls what command will run when the macro bar button is pressed. Current setting: ${_h.bold(S().config.macroAction)}`
     );
 
     const getConfigOption_SpinnerStyle = () => makeConfigOptionNum(
@@ -652,6 +673,12 @@ const APIHeartBeat = (()=> { // eslint-disable-line no-unused-vars
       S().config.latency,
       `!api-heartbeat-config --toggle-show-latency`,
       `${_h.bold('Show Latency')} controls if the current API latency measurement is shown next to the spinner. Current value: ${_h.bold(S().config.latency ? 'On' : 'Off')}`
+    );
+
+    const getConfigOption_StartupAnnounce = () => makeConfigOption(
+      S().config.startupAnnounce,
+      `!api-heartbeat-config --toggle-startup-announce`,
+      `${_h.bold('Startup Announce')} controls whether ${scriptName} announces that the API is up. Current value: ${_h.bold(S().config.startupAnnounce ? 'On' : 'Off')}`
     );
 
     const getConfigOption_ShowTime = () => makeConfigOption(
@@ -672,22 +699,24 @@ const APIHeartBeat = (()=> { // eslint-disable-line no-unused-vars
       `${_h.bold('Interval History Size')} sets the number of Run Interval History records to keep (minimum 1). Current setting: ${_h.bold(S().config.maxSegments)}`
     );
 
-
     const getConfigOption_DevMode = () => makeConfigOption(
       S().config.devMode,
       `!api-heartbeat-config --toggle-dev-mode`,
       `${_h.bold('Developer Mode')} controls how often ${scriptName} updates its widget. When Developer Mode is on, it updates 5 times per second, rather than once per second.  This is useful if you're working on developing scripts, but otherwise should be off.  Current value: ${_h.bold(S().config.devMode ? 'On' : 'Off')}`
     );
 
-    const getAllConfigOptions = () =>  getConfigOption_MacroAction() +
+    const getAllConfigOptions = () =>  
       getConfigOption_SpinnerStyle() +
+      getConfigOption_MacroAction() +
       getConfigOption_ShowLatency() +
       getConfigOption_ShowTime() +
       getConfigOption_HourOffset() +
       getConfigOption_MaxSegments() +
-      getConfigOption_DevMode() ;
+      getConfigOption_DevMode() +
+      getConfigOption_StartupAnnounce()
+      ;
 
-  const defaults = {
+    const defaults = {
       css: {
           button: {
               'border': '1px solid #cccccc',
@@ -706,122 +735,122 @@ const APIHeartBeat = (()=> { // eslint-disable-line no-unused-vars
               'padding': '.1em .3em;'
           }
       }
-  };
+    };
 
-  const css = (rules) => `style="${Object.keys(rules).map(k=>`${k}:${rules[k]};`).join('')}"`;
+    const css = (rules) => `style="${Object.keys(rules).map(k=>`${k}:${rules[k]};`).join('')}"`;
 
-  const _h = {
-    outer: (...o) => `<div style="border: 1px solid black; background-color: white; padding: 3px 3px;">${o.join(' ')}</div>`,
-    title: (t,v) => `<div style="font-weight: bold; border-bottom: 1px solid black;font-size: 130%;">${t} v${v}</div>`,
-    subhead: (...o) => `<b>${o.join(' ')}</b>`,
-    minorhead: (...o) => `<u>${o.join(' ')}</u>`,
-    optional: (...o) => `${ch('[')}${o.join(` ${ch('|')} `)}${ch(']')}`,
-    required: (...o) => `${ch('<')}${o.join(` ${ch('|')} `)}${ch('>')}`,
-    header: (...o) => `<div style="padding-left:10px;margin-bottom:3px;">${o.join(' ')}</div>`,
-    section: (s,...o) => `${_h.subhead(s)}${_h.inset(...o)}`,
-    paragraph: (...o) => `<p>${o.join(' ')}</p>`,
-    group: (...o) => `${o.join(' ')}`,
-    items: (o) => `<li>${o.join('</li><li>')}</li>`,
-    ol: (...o) => `<ol>${_h.items(o)}</ol>`,
-    ul: (...o) => `<ul>${_h.items(o)}</ul>`,
-    clearBoth: () => `<div style="clear:both;"></div>`,
-    grid: (...o) => `<div style="padding: 12px 0;">${o.join('')}${_h.clearBoth()}</div>`,
-    cell: (o) =>  `<div style="width: 130px; padding: 0 3px; float: left;">${o}</div>`,
-    inset: (...o) => `<div style="padding-left: 10px;padding-right:20px">${o.join(' ')}</div>`,
-    join: (...o) => o.join(' '),
-    configRow: (...o) => `<div ${css(defaults.css.configRow)}>${o.join(' ')}</div>`,
-    makeButton: (c, l, bc, color) => `<a ${css({...defaults.css.button,...{color,'background-color':bc}})} href="${c}">${l}</a>`,
-    floatRight: (...o) => `<div style="float:right;">${o.join(' ')}</div>`,
-    pre: (...o) =>`<div style="border:1px solid #e1e1e8;border-radius:4px;padding:8.5px;margin-bottom:9px;font-size:12px;white-space:normal;word-break:normal;word-wrap:normal;background-color:#f7f7f9;font-family:monospace;overflow:auto;">${o.join(' ')}</div>`,
-    preformatted: (...o) =>_h.pre(o.join('<br>').replace(/\s/g,ch(' '))),
-    code: (...o) => `<code>${o.join(' ')}</code>`,
-    attr: {
-      bare: (o)=>`${ch('@')}${ch('{')}${o}${ch('}')}`,
-      selected: (o)=>`${ch('@')}${ch('{')}selected${ch('|')}${o}${ch('}')}`,
-      target: (o)=>`${ch('@')}${ch('{')}target${ch('|')}${o}${ch('}')}`,
-      char: (o,c)=>`${ch('@')}${ch('{')}${c||'CHARACTER UniversalVTTImporter'}${ch('|')}${o}${ch('}')}`
-    },
-    bold: (...o) => `<b>${o.join(' ')}</b>`,
-    italic: (...o) => `<i>${o.join(' ')}</i>`,
-    font: {
-      command: (...o)=>`<b><span style="font-family:serif;">${o.join(' ')}</span></b>`
-    }
-  };
+    const _h = {
+      outer: (...o) => `<div style="border: 1px solid black; background-color: white; padding: 3px 3px;">${o.join(' ')}</div>`,
+      title: (t,v) => `<div style="font-weight: bold; border-bottom: 1px solid black;font-size: 130%;">${t} v${v}</div>`,
+      subhead: (...o) => `<b>${o.join(' ')}</b>`,
+      minorhead: (...o) => `<u>${o.join(' ')}</u>`,
+      optional: (...o) => `${ch('[')}${o.join(` ${ch('|')} `)}${ch(']')}`,
+      required: (...o) => `${ch('<')}${o.join(` ${ch('|')} `)}${ch('>')}`,
+      header: (...o) => `<div style="padding-left:10px;margin-bottom:3px;">${o.join(' ')}</div>`,
+      section: (s,...o) => `${_h.subhead(s)}${_h.inset(...o)}`,
+      paragraph: (...o) => `<p>${o.join(' ')}</p>`,
+      group: (...o) => `${o.join(' ')}`,
+      items: (o) => `<li>${o.join('</li><li>')}</li>`,
+      ol: (...o) => `<ol>${_h.items(o)}</ol>`,
+      ul: (...o) => `<ul>${_h.items(o)}</ul>`,
+      clearBoth: () => `<div style="clear:both;"></div>`,
+      grid: (...o) => `<div style="padding: 12px 0;">${o.join('')}${_h.clearBoth()}</div>`,
+      cell: (o) =>  `<div style="width: 130px; padding: 0 3px; float: left;">${o}</div>`,
+      inset: (...o) => `<div style="padding-left: 10px;padding-right:20px">${o.join(' ')}</div>`,
+      join: (...o) => o.join(' '),
+      configRow: (...o) => `<div ${css(defaults.css.configRow)}>${o.join(' ')}</div>`,
+      makeButton: (c, l, bc, color) => `<a ${css({...defaults.css.button,...{color,'background-color':bc}})} href="${c}">${l}</a>`,
+      floatRight: (...o) => `<div style="float:right;">${o.join(' ')}</div>`,
+      pre: (...o) =>`<div style="border:1px solid #e1e1e8;border-radius:4px;padding:8.5px;margin-bottom:9px;font-size:12px;white-space:normal;word-break:normal;word-wrap:normal;background-color:#f7f7f9;font-family:monospace;overflow:auto;">${o.join(' ')}</div>`,
+      preformatted: (...o) =>_h.pre(o.join('<br>').replace(/\s/g,ch(' '))),
+      code: (...o) => `<code>${o.join(' ')}</code>`,
+      attr: {
+        bare: (o)=>`${ch('@')}${ch('{')}${o}${ch('}')}`,
+        selected: (o)=>`${ch('@')}${ch('{')}selected${ch('|')}${o}${ch('}')}`,
+        target: (o)=>`${ch('@')}${ch('{')}target${ch('|')}${o}${ch('}')}`,
+        char: (o,c)=>`${ch('@')}${ch('{')}${c||'CHARACTER UniversalVTTImporter'}${ch('|')}${o}${ch('}')}`
+      },
+      bold: (...o) => `<b>${o.join(' ')}</b>`,
+      italic: (...o) => `<i>${o.join(' ')}</i>`,
+      font: {
+        command: (...o)=>`<b><span style="font-family:serif;">${o.join(' ')}</span></b>`
+      }
+    };
 
     const helpParts = {
-        helpBody: (context) => _h.join(
-                _h.header(
-                    _h.paragraph(`${scriptName} provides visual feedback that the API is running.`)
-                ),
-                _h.subhead('Commands'),
-                _h.inset(
-                    _h.font.command(
-                        `!api-heartbeat`,
-                        _h.optional(
-                            `--help`,
-                            `--check`,
-                            `--histogram`,
-                            `--history`
-                        )
-                    ),
-                    _h.ul(
-                      `${_h.bold('--help')} -- Displays this help and configuration options.`,
-                      `${_h.bold('--check')} -- Displays a simple message to show that the API is running.`,
-                      `${_h.bold('--histogram')} -- Displays a histogram of the last 600 measurements as well as some statistical information about how the API has been running.`,
-                      `${_h.bold('--history')} -- Displays a table of the previous run intervals for the API Sandbox, including start time, end time, and duration.`
-                    )
-                ),
-                _h.subhead('Description'),
-                _h.inset(
-                    _h.paragraph(`${scriptName} creates a macro that is shared with all players.  The title on the macro cycles through various images and data while the API is running.  It is intended that players or the GM can add the macro to their macro bar allowing them to keep an eye on whether the API is running.  Additionally, clicking the macro button with present data about the health of the API.`)
-                ),
-                ( playerIsGM(context.playerid)
-                    ?  _h.group(
-                            _h.subhead('Configuration'),
-                            getAllConfigOptions()
-                        )
-                    : ''
-                )
-            ),
-        helpConfig: (context) => _h.outer(
-          _h.title(scriptName, version),
-          ( playerIsGM(context.playerid)
-            ?  _h.group(
-              _h.subhead('Configuration'),
-              getAllConfigOptions()
-              )
-            : ''
+      helpBody: (context) => _h.join(
+        _h.header(
+          _h.paragraph(`${scriptName} provides visual feedback that the API is running.`)
+        ),
+        _h.subhead('Commands'),
+        _h.inset(
+          _h.font.command(
+            `!api-heartbeat`,
+            _h.optional(
+              `--help`,
+              `--check`,
+              `--histogram`,
+              `--history`,
+              `--pause`
+            )
+          ),
+          _h.ul(
+            `${_h.bold('--help')} -- Displays this help and configuration options.`,
+            `${_h.bold('--check')} -- Displays a simple message to show that the API is running.`,
+            `${_h.bold('--histogram')} -- Displays a histogram of the last 600 measurements as well as some statistical information about how the API has been running.`,
+            `${_h.bold('--history')} -- Displays a table of the previous run intervals for the API Sandbox, including start time, end time, and duration.`,
+            `${_h.bold('--pause')} -- Toggles pausing the macro spinner and adds/removes a pause icon on the macro bar button.`
           )
         ),
-        helpDoc: (context) => _h.join(
-                _h.title(scriptName, version),
-                helpParts.helpBody(context)
-            ),
-
-        helpChat: (context) => _h.outer(
-                _h.title(scriptName, version),
-                helpParts.helpBody(context)
-            )
+        _h.subhead('Description'),
+        _h.inset(
+          _h.paragraph(`${scriptName} creates a macro that is shared with all players.  The title on the macro cycles through various images and data while the API is running.  It is intended that players or the GM can add the macro to their macro bar allowing them to keep an eye on whether the API is running.  Additionally, clicking the macro button will present data about the health of the API, or other information depending on the configured Macro Action.`)
+        ),
+        ( playerIsGM(context.playerid)
+          ?  _h.group(
+            _h.subhead('Configuration'),
+            getAllConfigOptions()
+          )
+          : ''
+        )
+      ),
+      helpConfig: (context) => _h.outer(
+        _h.title(scriptName, version),
+        ( playerIsGM(context.playerid)
+          ?  _h.group(
+            _h.subhead('Configuration'),
+            getAllConfigOptions()
+          )
+          : ''
+        )
+      ),
+      helpDoc: (context) => _h.join(
+        _h.title(scriptName, version),
+        helpParts.helpBody(context)
+      ),
+      helpChat: (context) => _h.outer(
+        _h.title(scriptName, version),
+        helpParts.helpBody(context)
+      )
     };
 
-  const showHelp = (playerid) => {
-    let who=(getObj('player',playerid)||{get:()=>'API'}).get('_displayname');
-    let context = {
-      who,
-      playerid
+    const showHelp = (playerid) => {
+      let who=(getObj('player',playerid)||{get:()=>'API'}).get('_displayname');
+      let context = {
+        who,
+        playerid
+      };
+      sendChat(scriptName, '/w "'+who+'" '+ helpParts.helpChat(context));
     };
-    sendChat('API Heartbeat', '/w "'+who+'" '+ helpParts.helpChat(context));
-  };
 
-  const showConfigHelp = (playerid) => {
-    let who=(getObj('player',playerid)||{get:()=>'API'}).get('_displayname');
-    let context = {
-      who,
-      playerid
+    const showConfigHelp = (playerid) => {
+      let who=(getObj('player',playerid)||{get:()=>'API'}).get('_displayname');
+      let context = {
+        who,
+        playerid
+      };
+      sendChat(scriptName, '/w "'+who+'" '+ helpParts.helpConfig(context));
     };
-    sendChat('API Heartbeat', '/w "'+who+'" '+ helpParts.helpConfig(context));
-  };
-
 
     const handleInput = (msg) => {
       if ( "api" === msg.type && /^!api-heartbeat(\b\s|$)/i.test(msg.content) ) {
@@ -876,19 +905,16 @@ const APIHeartBeat = (()=> { // eslint-disable-line no-unused-vars
               case 'pause':
                 S().paused = !S().paused;
                 {
-                let currentName = HBMacro.get('name') || '';
-                if (S().paused) {
-                  if (!currentName.startsWith('⏸️')) {
-                    HBMacro.set({ name: `⏸️${currentName}` });
-                  }
-                  } else {
-                  if (currentName.startsWith('⏸️')) {
-                    currentName = currentName.replace(/^⏸️\s*/,'');
-                    HBMacro.set({ name: currentName });
+                  let currentName = HBMacro.get('name');
+                  if(S().paused){
+                    if(!/^⏸️/.test(currentName)){
+                      HBMacro.set({ name: `⏸️${currentName}` });
                     }
+                  } else {
+                    HBMacro.set({ name: currentName.replace(/^⏸️\s*/, '') });
                   }
                 }
-                sendChat('API Heartbeat',`/w "${who}" Heartbeat is now ${S().paused ? 'PAUSED' : 'RUNNING'}.`);
+                sendChat(scriptName, '/w "'+who+'" Heartbeat is now '+(S().paused ? 'PAUSED' : 'RUNNING')+'.');
                 break;
 
               case 'dev':
@@ -904,7 +930,7 @@ const APIHeartBeat = (()=> { // eslint-disable-line no-unused-vars
       } else if ( "api" === msg.type && /^!api-heartbeat-config(\b\s|$)/i.test(msg.content) && playerIsGM(msg.playerid)) {
         let args = msg.content.split(/\s+--/).slice(1);
         let who = (getObj('player',msg.playerid)||{get:()=>'API'}).get('_displayname');
-        if(args.includes('--help')) {
+        if(args.includes('help')) {
           showHelp(msg.playerid);
           return;
         }
@@ -923,7 +949,7 @@ const APIHeartBeat = (()=> { // eslint-disable-line no-unused-vars
               clearInterval(beatInterval);
               beatInterval=false;
               startStopBeat();
-              sendChat('API Heartbeat','/w "'+who+'" '+
+              sendChat(scriptName,'/w "'+who+'" '+
                 '<div style="border: 1px solid black; background-color: white; padding: 3px 3px;">'+
                 getConfigOption_DevMode()+
                 '</div>'
@@ -932,37 +958,46 @@ const APIHeartBeat = (()=> { // eslint-disable-line no-unused-vars
 
             case 'toggle-show-latency':
               S().config.latency=!S().config.latency;
-              sendChat('API Heartbeat','/w "'+who+'" '+
+              sendChat(scriptName,'/w "'+who+'" '+
                 '<div style="border: 1px solid black; background-color: white; padding: 3px 3px;">'+
                 getConfigOption_ShowLatency()+
                 '</div>'
               );
               break;
 
+            case 'toggle-startup-announce':
+              S().config.startupAnnounce=!S().config.startupAnnounce;
+              sendChat(scriptName,'/w "'+who+'" '+
+                '<div style="border: 1px solid black; background-color: white; padding: 3px 3px;">'+
+                getConfigOption_StartupAnnounce()+
+                '</div>'
+              );
+              break;
+
             case 'toggle-show-time':
               S().config.showTime=!S().config.showTime;
-              sendChat('API Heartbeat','/w "'+who+'" '+
+              sendChat(scriptName,'/w "'+who+'" '+
                 '<div style="border: 1px solid black; background-color: white; padding: 3px 3px;">'+
                 getConfigOption_ShowTime()+
                 '</div>'
               );
               break;
 
-          case 'set-hour-offset':
-            if(parseFloat(opt[0])) {
-              S().config.hourOffset=parseFloat(opt[0]);
-            } else {
-              omsg='<div><b>Error:</b> Not a valid Hour Offset: '+opt[0]+'</div>';
-            }
-            sendChat('API Heartbeat','/w "'+who+'" '+
-              '<div style="border: 1px solid black; background-color: white; padding: 3px 3px;">'+
-                omsg+
-                getConfigOption_HourOffset()+
-              '</div>'
-            );
-            break;
+            case 'set-hour-offset':
+              if(parseFloat(opt[0])) {
+                S().config.hourOffset=parseFloat(opt[0]);
+              } else {
+                omsg='<div><b>Error:</b> Not a valid Hour Offset: '+opt[0]+'</div>';
+              }
+              sendChat(scriptName,'/w "'+who+'" '+
+                '<div style="border: 1px solid black; background-color: white; padding: 3px 3px;">'+
+                  omsg+
+                  getConfigOption_HourOffset()+
+                '</div>'
+              );
+              break;
 
-          case 'set-max-segments': {
+            case 'set-max-segments': {
               let maxSegs = parseInt(opt[0]);
               if(maxSegs>0){
                 S().config.maxSegments=maxSegs;
@@ -973,7 +1008,7 @@ const APIHeartBeat = (()=> { // eslint-disable-line no-unused-vars
                   omsg='<div><b>Error:</b> Interval History Size must be 1 or greater.</div>';
                 }
               }
-              sendChat('API Heartbeat','/w "'+who+'" '+
+              sendChat(scriptName,'/w "'+who+'" '+
                 '<div style="border: 1px solid black; background-color: white; padding: 3px 3px;">'+
                   omsg+
                   getConfigOption_MaxSegments()+
@@ -988,7 +1023,7 @@ const APIHeartBeat = (()=> { // eslint-disable-line no-unused-vars
               } else {
                 omsg='<div><b>Error:</b> Not a valid Spinner Style: '+opt[0]+'</div>';
               }
-              sendChat('API Heartbeat','/w "'+who+'" '+
+              sendChat(scriptName,'/w "'+who+'" '+
                 '<div style="border: 1px solid black; background-color: white; padding: 3px 3px;">'+
                 omsg+
                 getConfigOption_SpinnerStyle()+
@@ -996,25 +1031,25 @@ const APIHeartBeat = (()=> { // eslint-disable-line no-unused-vars
               );
               break;
 
-              case 'set-macro-action': {
-                const newAction = opt[0]; // from the | separator
-                if(newAction){
-                  S().config.macroAction = newAction;
-                  HBMacro.set({
-                    action: `!api-heartbeat ${newAction}`
-                  });
-                  omsg = `<div>Macro action set to ${newAction}.</div>`;
-                } else {
-                  omsg = `<div><b>Error:</b> Invalid macro action.</div>`;
-               }
-               sendChat('API Heartbeat', `/w "${who}" ` +
-               '<div style="border: 1px solid black; background-color: white; padding: 3px 3px;">' +
-               omsg +
-               getConfigOption_MacroAction() +
-               '</div>'
-               );
-               }
-               break;
+            case 'set-macro-action': {
+              const newAction = opt[0];
+              if(newAction){
+                S().config.macroAction = newAction;
+                HBMacro.set({
+                  action: `!api-heartbeat ${newAction}`
+                });
+                omsg = `<div>Macro action set to ${newAction}.</div>`;
+              } else {
+                omsg = `<div><b>Error:</b> Invalid macro action.</div>`;
+              }
+              sendChat(scriptName, `/w "${who}" ` +
+                '<div style="border: 1px solid black; background-color: white; padding: 3px 3px;">' +
+                omsg +
+                getConfigOption_MacroAction() +
+                '</div>'
+              );
+            }
+            break;
 
           }
         });
@@ -1024,7 +1059,7 @@ const APIHeartBeat = (()=> { // eslint-disable-line no-unused-vars
     const getCreator = ()=>findObjs({type:'player'}).reduce((m,p)=>(m.id<p.id) ? m : p);
 
     const getOrCreateMacro = ()=>{
-      let m = getObj('macro',S().macroID);
+      let m = getObj('macro',S().config.macroID);
       if(!m){
         let gm = getCreator();
         m = createObj('macro',{
@@ -1033,23 +1068,23 @@ const APIHeartBeat = (()=> { // eslint-disable-line no-unused-vars
           action: `!api-heartbeat ${S().config.macroAction}`,
           visibleto: "all"
         });
-        S().macroID = m.id;
+        S().config.macroID = m.id;
       }
       return m;
     };
 
-      const registerEventHandlers = () => {
-        on('chat:message', handleInput);
-        on('change:player:_online', startStopBeat);
-      };
+    const registerEventHandlers = () => {
+      on('chat:message', handleInput);
+      on('change:player:_online', startStopBeat);
+    };
 
-      on('ready',()=>{
-        checkInstall();
-        registerEventHandlers();
-      });
+    on('ready',()=>{
+      checkInstall();
+      registerEventHandlers();
+    });
 
-      return {
-      };
+    return {
+    };
 
 })();
 
