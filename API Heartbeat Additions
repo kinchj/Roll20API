@@ -9,9 +9,9 @@ API_Meta.APIHeartBeat={offset:Number.MAX_SAFE_INTEGER,lineCount:-1};
 const APIHeartBeat = (()=> { // eslint-disable-line no-unused-vars
 
     const scriptName = "APIHeartBeat";
-    const version = '0.5.1';
+    const version = '0.5.2';
     API_Meta.APIHeartBeat.version = version;
-    const lastUpdate = 1634706237;
+    const lastUpdate = 1764806400;
     const schemaVersion = 0.4;
     const beatPeriod = 200;
     const devScaleFactor = 5;
@@ -92,10 +92,17 @@ const APIHeartBeat = (()=> { // eslint-disable-line no-unused-vars
                 latency: true,
                 maxSegments: 30,
                 showTime: false,
-                hourOffset: -5
+                hourOffset: -5,
+                macroAction: " --histogram"
               }
             };
         }
+
+        // ensure new paused flag exists
+        if(!_.has(S(),'paused')){
+            S().paused = false;
+        }
+
       }
       HBMacro = getOrCreateMacro();
       assureHelpHandout();
@@ -132,7 +139,7 @@ const APIHeartBeat = (()=> { // eslint-disable-line no-unused-vars
     const histogramStyle = ``;
     const historyStyle = ``;
     const graphImg = "https://s3.amazonaws.com/files.d20.io/images/176281994/L28MUxhSDnieHtIl49363Q/thumb.jpg?160477139355";
-    const sendCheck = (who) => sendChat('',`/w "${who}" <div style="${checkStyle}">API is Running.</div>`);
+    const sendCheck = (who) => sendChat('API Heartbeat',`/w "${who}" <div style="${checkStyle}">API is Running.</div>`);
 
     let latencyData = [];
     const NUM_RECORDS = 600;
@@ -310,8 +317,8 @@ const APIHeartBeat = (()=> { // eslint-disable-line no-unused-vars
       };
       return e.container(e.header(),e.table(rows),e.footer());
     };
-    const sendHistogram = (who) => sendChat('',`/w "${who}" <div style="${histogramStyle}">${getHistogram()}</div>`);
-    const sendHistory = (who) => sendChat('',`/w "${who}" <div style="${historyStyle}">${getHistory()}</div>`);
+    const sendHistogram = (who) => sendChat('API Heartbeat',`/w "${who}" <div style="${histogramStyle}">${getHistogram()}</div>`);
+    const sendHistory = (who) => sendChat('API Heartbeat',`/w "${who}" <div style="${historyStyle}">${getHistory()}</div>`);
 
     const arrowCycle = {
         [`↖️`]: `⬆️`, 
@@ -455,6 +462,11 @@ const APIHeartBeat = (()=> { // eslint-disable-line no-unused-vars
     let lastRunTime = 0;
     
     const updateMacro = () => {
+
+    if(S().paused){
+        return;
+    }
+
       let then = Date.now();
       S().timeSegments[0].end = then;
       let intervalLatency = lastRunTime ? (then-lastRunTime-currentBeatPeriod) : 0;
@@ -481,6 +493,62 @@ const APIHeartBeat = (()=> { // eslint-disable-line no-unused-vars
               let lastSword = (label.match(swordRegex)||[])[1];
               let nextSword = Object.keys(swordCycle).includes(lastSword) ? swordCycle[lastSword] : `⚔️`;
               macName+=nextSword;
+            }
+            break;
+
+          case 'HEART': {
+              let lastHeart = (label.match(heartRegex)||[])[1];
+              let nextHeart = Object.keys(heartCycle).includes(lastHeart) ? heartCycle[lastHeart] : `❤️`;
+              macName+=nextHeart;
+            }
+            break;
+
+          case 'SQUARE': {
+              let lastSquare = (label.match(squareRegex)||[])[1];
+              let nextSquare = Object.keys(squareCycle).includes(lastSquare) ? squareCycle[lastSquare] : `🟥️`;
+              macName+=nextSquare;
+            }
+            break;
+
+          case 'CIRCLE': {
+              let lastCircle = (label.match(circleRegex)||[])[1];
+              let nextCircle = Object.keys(circleCycle).includes(lastCircle) ? circleCycle[lastCircle] : `🔴`;
+              macName+=nextCircle;
+            }
+            break;
+
+          case 'GROW': {
+              let lastGrow = (label.match(growRegex)||[])[1];
+              let nextGrow = Object.keys(growCycle).includes(lastGrow) ? growCycle[lastGrow] : `▪️`;
+              macName+=nextGrow;
+            }
+            break;
+
+          case 'COLORSHAPES': {
+              let lastColorShapes = (label.match(colorshapesRegex)||[])[1];
+              let nextColorShapes = Object.keys(colorshapesCycle).includes(lastColorShapes) ? colorshapesCycle[lastColorShapes] : `❤️️`;
+              macName+=nextColorShapes;
+            }
+            break;
+
+          case 'SPINNER': {
+              let lastSpinner = (label.match(spinnerRegex)||[])[1];
+              let nextSpinner = Object.keys(spinnerCycle).includes(lastSpinner) ? spinnerCycle[lastSpinner] : `↖️`;
+              macName+=nextSpinner;
+            }
+            break;
+
+          case 'HEARTSPIN': {
+              let lastHeartSpin = (label.match(heartspinRegex)||[])[1];
+              let nextHeartSpin = Object.keys(heartspinCycle).includes(lastHeartSpin) ? heartspinCycle[lastHeartSpin] : `💖`;
+              macName+=nextHeartSpin;
+            }
+            break;
+
+          case 'HEARTBEAT': {
+              let lastHeartBeat = (label.match(heartbeatRegex)||[])[1];
+              let nextHeartBeat = Object.keys(heartbeatCycle).includes(lastHeartBeat) ? heartbeatCycle[lastHeartBeat] : `❤️`;
+              macName+=nextHeartBeat;
             }
             break;
 
@@ -567,6 +635,13 @@ const APIHeartBeat = (()=> { // eslint-disable-line no-unused-vars
       HEARTBEAT: 'Beating Hearts.'
       };
 
+
+    const getConfigOption_MacroAction = () => makeConfigOptionNum(
+     S().config.macroAction,
+     `!api-heartbeat-config --set-macro-action|?{Macro Action|Histogram,--histogram|Check,--check|Pause,--pause|History,--history}`,
+     `${_h.bold('Macro Action')} controls what command will run when the macro bar button is pressed. Current setting: ${_h.bold(S().config.macroAction)}`
+    );
+
     const getConfigOption_SpinnerStyle = () => makeConfigOptionNum(
       S().config.spinner,
       `!api-heartbeat-config --set-spinner|?{Spinner Style|${getOptionsWithDefault(SpinnerOptions,S().config.spinner)}}`,
@@ -604,7 +679,8 @@ const APIHeartBeat = (()=> { // eslint-disable-line no-unused-vars
       `${_h.bold('Developer Mode')} controls how often ${scriptName} updates its widget. When Developer Mode is on, it updates 5 times per second, rather than once per second.  This is useful if you're working on developing scripts, but otherwise should be off.  Current value: ${_h.bold(S().config.devMode ? 'On' : 'Off')}`
     );
 
-    const getAllConfigOptions = () => getConfigOption_SpinnerStyle() +
+    const getAllConfigOptions = () =>  getConfigOption_MacroAction() +
+      getConfigOption_SpinnerStyle() +
       getConfigOption_ShowLatency() +
       getConfigOption_ShowTime() +
       getConfigOption_HourOffset() +
@@ -734,7 +810,7 @@ const APIHeartBeat = (()=> { // eslint-disable-line no-unused-vars
       who,
       playerid
     };
-    sendChat('', '/w "'+who+'" '+ helpParts.helpChat(context));
+    sendChat('API Heartbeat', '/w "'+who+'" '+ helpParts.helpChat(context));
   };
 
   const showConfigHelp = (playerid) => {
@@ -743,7 +819,7 @@ const APIHeartBeat = (()=> { // eslint-disable-line no-unused-vars
       who,
       playerid
     };
-    sendChat('', '/w "'+who+'" '+ helpParts.helpConfig(context));
+    sendChat('API Heartbeat', '/w "'+who+'" '+ helpParts.helpConfig(context));
   };
 
 
@@ -797,12 +873,18 @@ const APIHeartBeat = (()=> { // eslint-disable-line no-unused-vars
                 sendHistory(who);
                 break;
 
+              case 'pause':
+                S().paused = !S().paused;
+                sendChat('API Heartbeat', '/w "'+who+'" Heartbeat is now '+(S().paused ? 'PAUSED' : 'RUNNING')+'.');
+                break;
+
               case 'dev':
                 S().config.devMode = !S().config.devMode;
                 clearInterval(beatInterval);
                 beatInterval=false;
                 startStopBeat();
                 break;
+
             }
           }
         }
@@ -828,7 +910,7 @@ const APIHeartBeat = (()=> { // eslint-disable-line no-unused-vars
               clearInterval(beatInterval);
               beatInterval=false;
               startStopBeat();
-              sendChat('','/w "'+who+'" '+
+              sendChat('API Heartbeat','/w "'+who+'" '+
                 '<div style="border: 1px solid black; background-color: white; padding: 3px 3px;">'+
                 getConfigOption_DevMode()+
                 '</div>'
@@ -837,7 +919,7 @@ const APIHeartBeat = (()=> { // eslint-disable-line no-unused-vars
 
             case 'toggle-show-latency':
               S().config.latency=!S().config.latency;
-              sendChat('','/w "'+who+'" '+
+              sendChat('API Heartbeat','/w "'+who+'" '+
                 '<div style="border: 1px solid black; background-color: white; padding: 3px 3px;">'+
                 getConfigOption_ShowLatency()+
                 '</div>'
@@ -846,7 +928,7 @@ const APIHeartBeat = (()=> { // eslint-disable-line no-unused-vars
 
             case 'toggle-show-time':
               S().config.showTime=!S().config.showTime;
-              sendChat('','/w "'+who+'" '+
+              sendChat('API Heartbeat','/w "'+who+'" '+
                 '<div style="border: 1px solid black; background-color: white; padding: 3px 3px;">'+
                 getConfigOption_ShowTime()+
                 '</div>'
@@ -859,7 +941,7 @@ const APIHeartBeat = (()=> { // eslint-disable-line no-unused-vars
             } else {
               omsg='<div><b>Error:</b> Not a valid Hour Offset: '+opt[0]+'</div>';
             }
-            sendChat('','/w "'+who+'" '+
+            sendChat('API Heartbeat','/w "'+who+'" '+
               '<div style="border: 1px solid black; background-color: white; padding: 3px 3px;">'+
                 omsg+
                 getConfigOption_HourOffset()+
@@ -878,7 +960,7 @@ const APIHeartBeat = (()=> { // eslint-disable-line no-unused-vars
                   omsg='<div><b>Error:</b> Interval History Size must be 1 or greater.</div>';
                 }
               }
-              sendChat('','/w "'+who+'" '+
+              sendChat('API Heartbeat','/w "'+who+'" '+
                 '<div style="border: 1px solid black; background-color: white; padding: 3px 3px;">'+
                   omsg+
                   getConfigOption_MaxSegments()+
@@ -893,13 +975,34 @@ const APIHeartBeat = (()=> { // eslint-disable-line no-unused-vars
               } else {
                 omsg='<div><b>Error:</b> Not a valid Spinner Style: '+opt[0]+'</div>';
               }
-              sendChat('','/w "'+who+'" '+
+              sendChat('API Heartbeat','/w "'+who+'" '+
                 '<div style="border: 1px solid black; background-color: white; padding: 3px 3px;">'+
                 omsg+
                 getConfigOption_SpinnerStyle()+
                 '</div>'
               );
               break;
+
+              case 'set-macro-action': {
+                const newAction = opt[0]; // from the | separator
+                if(newAction){
+                  S().config.macroAction = newAction;
+                  HBMacro.set({
+                    action: `!api-heartbeat ${newAction}`
+                  });
+                  omsg = `<div>Macro action set to ${newAction}.</div>`;
+                } else {
+                  omsg = `<div><b>Error:</b> Invalid macro action.</div>`;
+               }
+               sendChat('API Heartbeat', `/w "${who}" ` +
+               '<div style="border: 1px solid black; background-color: white; padding: 3px 3px;">' +
+               omsg +
+               getConfigOption_MacroAction() +
+               '</div>'
+               );
+               }
+               break;
+
           }
         });
       }
@@ -914,15 +1017,13 @@ const APIHeartBeat = (()=> { // eslint-disable-line no-unused-vars
         m = createObj('macro',{
           playerid: gm.id,
           name: "!-Ｘ-０００",
-          action: "!api-heartbeat --histogram",
+          action: `!api-heartbeat ${S().config.macroAction}`,
           visibleto: "all"
         });
         S().macroID = m.id;
       }
       return m;
     };
-
-
 
       const registerEventHandlers = () => {
         on('chat:message', handleInput);
