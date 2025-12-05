@@ -875,7 +875,20 @@ const APIHeartBeat = (()=> { // eslint-disable-line no-unused-vars
 
               case 'pause':
                 S().paused = !S().paused;
-                sendChat('API Heartbeat', '/w "'+who+'" Heartbeat is now '+(S().paused ? 'PAUSED' : 'RUNNING')+'.');
+                {
+                let currentName = HBMacro.get('name') || '';
+                if (S().paused) {
+                  if (!currentName.startsWith('⏸️')) {
+                    HBMacro.set({ name: `⏸️${currentName}` });
+                  }
+                  } else {
+                  if (currentName.startsWith('⏸️')) {
+                    currentName = currentName.replace(/^⏸️\s*/,'');
+                    HBMacro.set({ name: currentName });
+                    }
+                  }
+                }
+                sendChat('API Heartbeat',`/w "${who}" Heartbeat is now ${S().paused ? 'PAUSED' : 'RUNNING'}.`);
                 break;
 
               case 'dev':
