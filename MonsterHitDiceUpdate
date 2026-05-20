@@ -1,0 +1,566 @@
+// Github:   https://github.com/shdwjk/Roll20API/blob/master/MonsterHitDice/MonsterHitDice.js
+// By:       The Aaron, Arcane Scriptomancer
+// Update :  Jarren 5/20/26
+// Contact:  https://app.roll20.net/users/104025/the-aaron
+var API_Meta = API_Meta || {}; //eslint-disable-line no-var
+API_Meta.MonsterHitDice = { offset: Number.MAX_SAFE_INTEGER, lineCount: -1 };
+{ try { throw new Error(''); } catch(e) { API_Meta.MonsterHitDice.offset = (parseInt(e.stack.split(/\n/)[1].replace(/^.*:(\d+):.*$/, '$1'), 10) - 6); } }
+
+var globalconfig = globalconfig || undefined; //eslint-disable-line no-var
+const MonsterHitDice = (() => { // eslint-disable-line no-unused-vars
+    const version = '0.4.0';
+    API_Meta.MonsterHitDice.version = version;
+    const lastUpdate = 1779307200;
+    const schemaVersion = 0.4;
+
+    let tokenIds = [];
+
+    const sheetPresets = [
+        'D&D 5E by Roll20 (2014)',
+        'D&D 5.5E by Roll20 (2024)',
+        'DnD 5e - Community Contributed',
+        'DnD 5e - Shaped v2',
+        'Advanced 1st Edition',
+        'Custom - (Use settings below)'
+    ];
+
+    const ch = (c) => {
+        const entities = {
+            '<': '&lt;',
+            '>': '&gt;',
+            "'": '&#39;',
+            '"': '&quot;',
+            '@': '&#64;',
+            '{': '&#123;',
+            '}': '&#125;',
+            '[': '&#91;',
+            ']': '&#93;',
+            '|': '&#124;'
+        };
+        return `${c || ''}`.replace(/[<>'"@{}\[\]\|]/g, m => entities[m]);
+    };
+
+    const onOff = (v) => {
+        return /^(1|true|yes|on)$/i.test(`${v}`);
+    };
+
+    const makeButton = (label, command) => {
+        return `<a style="display:inline-block;margin:2px 2px 2px 0;padding:1px 4px;border:1px solid #000;border-radius:4px;background:#fff;color:#003366;text-decoration:none;font-weight:bold;" href="${command}">${label}</a>`;
+    };
+
+    const getConfig = () => state.MonsterHitDice.config;
+
+    const applySheetPreset = (sheet) => {
+        const c = getConfig();
+        c.sheet = sheet;
+
+        switch(sheet) {
+            case 'DnD 5e - Community Contributed':
+                c.hitDiceAttribute = 'npc_HP_hit_dice';
+                c.findSRDFormula = false;
+                c.HDis1eD8s = false;
+                c.useConBonus = true;
+                c.conBonusAttribute = 'npc_constitution';
+                c.conBonusIsStat = true;
+                break;
+
+            case 'DnD 5e - Shaped v2':
+                c.hitDiceAttribute = 'npc_hpformula';
+                c.findSRDFormula = true;
+                c.HDis1eD8s = false;
+                c.useConBonus = false;
+                c.conBonusAttribute = '';
+                c.conBonusIsStat = false;
+                break;
+
+            case 'D&D 5E by Roll20 (2014)':
+                c.hitDiceAttribute = 'npc_hpformula';
+                c.findSRDFormula = false;
+                c.HDis1eD8s = false;
+                c.useConBonus = false;
+                c.conBonusAttribute = '';
+                c.conBonusIsStat = false;
+                break;
+
+            case 'D&D 5.5E by Roll20 (2024)':
+                c.hitDiceAttribute = 'npc_hpformula';
+                c.findSRDFormula = false;
+                c.HDis1eD8s = false;
+                c.useConBonus = false;
+                c.conBonusAttribute = '';
+                c.conBonusIsStat = false;
+                break;
+
+            case 'Advanced 1st Edition':
+                c.hitDiceAttribute = 'hitdice';
+                c.findSRDFormula = false;
+                c.HDis1eD8s = true;
+                c.useConBonus = false;
+                c.conBonusAttribute = '';
+                c.conBonusIsStat = false;
+                break;
+
+            case 'Custom - (Use settings below)':
+                break;
+
+            default:
+                c.sheet = 'D&D 5E by Roll20 (2014)';
+                c.hitDiceAttribute = 'npc_hpformula';
+                c.findSRDFormula = false;
+                c.HDis1eD8s = false;
+                c.useConBonus = false;
+                c.conBonusAttribute = '';
+                c.conBonusIsStat = false;
+                break;
+        }
+    };
+
+    const checkGlobalConfig = () => {
+        const s = state.MonsterHitDice;
+        const g = (globalconfig && globalconfig.monsterhitdice);
+
+        if(g && g.lastsaved && g.lastsaved > s.globalconfigCache.lastsaved) {
+            log('  > Updating from Global Config <  [' + (new Date(g.lastsaved * 1000)) + ']');
+
+            if(g.Bar && g.Bar.match(/\d+/)) {
+                s.config.bar = parseInt(g.Bar.match(/\d+/)[0], 10);
+            }
+
+            applySheetPreset(g.Sheet);
+
+            if('Custom - (Use settings below)' === g.Sheet) {
+                s.config.hitDiceAttribute = g['HitDice Attribute'];
+                s.config.findSRDFormula = 'findSRDFormula' === g['SRD Embedded Formula'];
+                s.config.HDis1eD8s = 'HDis1eD8s' === g['1st Edition HD in Attribute (d8)'];
+                s.config.useConBonus = 'useSeparateCon' === g['Separate Constitution Modifier'];
+                s.config.conBonusAttribute = g['Constitution Attribute'];
+                s.config.conBonusIsStat = 'conIsStat' === g['Constitution is Stat'];
+            }
+
+            state.MonsterHitDice.globalconfigCache = globalconfig.monsterhitdice;
+        }
+    };
+
+    const checkInstall = () => {
+        if(!_.has(state, 'MonsterHitDice') || state.MonsterHitDice.version !== schemaVersion) {
+            log('  > Updating MonsterHitDice Schema to v' + schemaVersion + ' <');
+
+            switch(state.MonsterHitDice && state.MonsterHitDice.version) {
+                case 0.1:
+                    delete state.MonsterHitDice.globalConfigCache;
+                    state.MonsterHitDice.globalconfigCache = { lastsaved: 0 };
+
+                /* falls through */
+                case 0.2:
+                    state.MonsterHitDice.config.findSRDFormula = state.MonsterHitDice.findSRDFormula;
+                    delete state.MonsterHitDice.findSRDFormula;
+
+                /* falls through */
+                case 0.3:
+                    state.MonsterHitDice.version = schemaVersion;
+                    state.MonsterHitDice.globalconfigCache = state.MonsterHitDice.globalconfigCache || { lastsaved: 0 };
+                    state.MonsterHitDice.config = state.MonsterHitDice.config || {};
+                    state.MonsterHitDice.config.bar = state.MonsterHitDice.config.bar || 1;
+                    state.MonsterHitDice.config.sheet = state.MonsterHitDice.config.sheet || 'D&D 5E by Roll20 (2014)';
+                    state.MonsterHitDice.config.hitDiceAttribute = state.MonsterHitDice.config.hitDiceAttribute || 'npc_hpformula';
+                    state.MonsterHitDice.config.findSRDFormula = !!state.MonsterHitDice.config.findSRDFormula;
+                    state.MonsterHitDice.config.HDis1eD8s = !!state.MonsterHitDice.config.HDis1eD8s;
+                    state.MonsterHitDice.config.useConBonus = !!state.MonsterHitDice.config.useConBonus;
+                    state.MonsterHitDice.config.conBonusAttribute = state.MonsterHitDice.config.conBonusAttribute || '';
+                    state.MonsterHitDice.config.conBonusIsStat = !!state.MonsterHitDice.config.conBonusIsStat;
+                    break;
+
+                default:
+                    state.MonsterHitDice = {
+                        version: schemaVersion,
+                        globalconfigCache: { lastsaved: 0 },
+                        config: {
+                            bar: 1,
+                            sheet: 'D&D 5E by Roll20 (2014)',
+                            hitDiceAttribute: 'npc_hpformula',
+                            findSRDFormula: false,
+                            HDis1eD8s: false,
+                            useConBonus: false,
+                            conBonusAttribute: '',
+                            conBonusIsStat: false
+                        }
+                    };
+                    break;
+            }
+        }
+
+        checkGlobalConfig();
+        log('MonsterHitDice v' + version + ' ready. Using Bar' + state.MonsterHitDice.config.bar + ', HP formula: ' + state.MonsterHitDice.config.hitDiceAttribute);
+    };
+
+    const parseArgs = (content) => {
+        let args = {};
+        content.split(/\s+--/).slice(1).forEach(a => {
+            let parts = a.split('|');
+            let key = (parts.shift() || '').trim().toLowerCase();
+            let value = parts.join('|').trim();
+            if(key) {
+                args[key] = value;
+            }
+        });
+        return args;
+    };
+
+    const showConfig = (who) => {
+        const c = getConfig();
+        const custom = 'Custom - (Use settings below)' === c.sheet;
+        const sheetQuery = `?{Sheet|${sheetPresets.join('|')}}`;
+
+        let content = `<div style="background:#d9ecff;border:2px solid #000;border-radius:6px;padding:6px;line-height:1.35;text-align:left;">`;
+        content += `<div style="font-weight:bold;text-align:center;margin:0 0 4px 0;">MonsterHitDice Config</div>`;
+
+        content += `<div><b>Bar:</b> Bar${c.bar} ${makeButton('Set', '!mhd --bar|?{Bar|1|2|3}')}</div>`;
+        content += `<div><b>Sheet:</b> ${ch(c.sheet)} ${makeButton('Set', `!mhd --sheet|${sheetQuery}`)}</div>`;
+
+        content += `<hr style="border:0;border-top:1px solid #000;margin:5px 0;">`;
+        content += `<div><b>Hit Dice Attribute:</b> ${ch(c.hitDiceAttribute)} ${custom ? makeButton('Set', `!mhd --hitdiceattr|?{Hit Dice Attribute|${ch(c.hitDiceAttribute)}}`) : ''}</div>`;
+        content += `<div><b>SRD Embedded Formula:</b> ${c.findSRDFormula ? 'Yes' : 'No'} ${custom ? makeButton('Toggle', `!mhd --findsrd|${c.findSRDFormula ? 'off' : 'on'}`) : ''}</div>`;
+        content += `<div><b>1E HD as d8:</b> ${c.HDis1eD8s ? 'Yes' : 'No'} ${custom ? makeButton('Toggle', `!mhd --hd1e|${c.HDis1eD8s ? 'off' : 'on'}`) : ''}</div>`;
+        content += `<div><b>Use Con Bonus:</b> ${c.useConBonus ? 'Yes' : 'No'} ${custom ? makeButton('Toggle', `!mhd --usecon|${c.useConBonus ? 'off' : 'on'}`) : ''}</div>`;
+        content += `<div><b>Con Attribute:</b> ${c.conBonusAttribute ? ch(c.conBonusAttribute) : '<i>None</i>'} ${custom ? makeButton('Set', `!mhd --conattr|?{Constitution Attribute|${ch(c.conBonusAttribute || 'constitution')}}`) : ''}</div>`;
+        content += `<div><b>Con is Stat:</b> ${c.conBonusIsStat ? 'Yes' : 'No'} ${custom ? makeButton('Toggle', `!mhd --conisstat|${c.conBonusIsStat ? 'off' : 'on'}`) : ''}</div>`;
+
+        if(!custom) {
+            content += `<hr style="border:0;border-top:1px solid #000;margin:5px 0;">`;
+            content += `<div><i>Select Custom to edit the individual sheet options.</i></div>`;
+        }
+
+        content += `<hr style="border:0;border-top:1px solid #000;margin:5px 0;">`;
+        content += `<div>${makeButton('Roll Selected Tokens', '!mhd')}</div>`;
+        content += `</div>`;
+
+        sendChat('MonsterHitDice', `/w "${who}" ${content}`);
+    };
+
+    const applyConfigArgs = (args) => {
+        const c = getConfig();
+        let changed = false;
+
+        if(_.has(args, 'bar')) {
+            let bar = parseInt(args.bar, 10);
+            if(_.contains([1, 2, 3], bar)) {
+                c.bar = bar;
+                changed = true;
+            }
+        }
+
+        if(_.has(args, 'sheet')) {
+            let sheet = args.sheet;
+            if(_.contains(sheetPresets, sheet)) {
+                applySheetPreset(sheet);
+                changed = true;
+            }
+        }
+
+        if('Custom - (Use settings below)' === c.sheet) {
+            if(_.has(args, 'hitdiceattr')) {
+                c.hitDiceAttribute = args.hitdiceattr;
+                changed = true;
+            }
+
+            if(_.has(args, 'findsrd')) {
+                c.findSRDFormula = onOff(args.findsrd);
+                changed = true;
+            }
+
+            if(_.has(args, 'hd1e')) {
+                c.HDis1eD8s = onOff(args.hd1e);
+                changed = true;
+            }
+
+            if(_.has(args, 'usecon')) {
+                c.useConBonus = onOff(args.usecon);
+                changed = true;
+            }
+
+            if(_.has(args, 'conattr')) {
+                c.conBonusAttribute = args.conattr;
+                changed = true;
+            }
+
+            if(_.has(args, 'conisstat')) {
+                c.conBonusIsStat = onOff(args.conisstat);
+                changed = true;
+            }
+        }
+
+        return changed;
+    };
+
+    const findSRDRoll = (txt) => {
+        let m = `${txt}`.match(/\d+d\d+(\s*[+-]\s*\d+)?/);
+        return m ? m[0] : 0;
+    };
+
+    const buildHD1eExpression = (exp) => {
+        let m = `${exp}`.match(/(\d+)([+-]\d+)?/);
+        if(m) {
+            return `${m[1]}d8${m[2] ? m[2] : ''}`;
+        }
+        return 0;
+    };
+
+    const getSheetValue = async (characterId, attrName) => {
+        if(!characterId || !attrName) {
+            return undefined;
+        }
+
+        if('function' === typeof getSheetItem) {
+            try {
+                let result = await getSheetItem(characterId, attrName);
+
+                if(undefined !== result && null !== result) {
+                    if('object' === typeof result) {
+                        if(_.has(result, 'current')) {
+                            return result.current;
+                        }
+                        if(_.has(result, 'value')) {
+                            return result.value;
+                        }
+                        if('function' === typeof result.get) {
+                            return result.get('current');
+                        }
+                    }
+                    return result;
+                }
+            } catch(e) {
+                log(`MHD - getSheetItem failed for ${attrName} on ${characterId}: ${e.message || e}`);
+            }
+        }
+
+        const attr = findObjs({
+            type: 'attribute',
+            characterid: characterId,
+            name: attrName
+        })[0];
+
+        if(attr) {
+            return attr.get('current');
+        }
+
+        return undefined;
+    };
+
+    const rollHitDice = async (obj) => {
+        let sets = {};
+        const c = getConfig();
+        const bar = 'bar' + c.bar;
+        let hdExpression = 0;
+        let conExpression = 0;
+        let bonus = 0;
+
+        if(!obj) {
+            return { rolled: false, reason: 'No token found.' };
+        }
+
+        if(!_.contains(tokenIds, obj.id)) {
+            return { rolled: false, silent: true, reason: 'Token was not queued for rolling.' };
+        }
+
+        tokenIds = _.without(tokenIds, obj.id);
+
+        if('graphic' !== obj.get('type') || 'token' !== obj.get('subtype')) {
+            return { rolled: false, reason: 'Selected object is not a token.' };
+        }
+
+        if('' === obj.get('represents')) {
+            return { rolled: false, reason: 'Token does not represent a character.' };
+        }
+
+        if('' !== obj.get(bar + '_link')) {
+            return { rolled: false, reason: `Hit dice not rolled: Bar${c.bar} is linked` };
+        }
+
+        const characterId = obj.get('represents');
+        const hdValue = await getSheetValue(characterId, c.hitDiceAttribute);
+
+        if(!hdValue) {
+            return { rolled: false, reason: `Hit dice not rolled: No value found for ${c.hitDiceAttribute}.` };
+        }
+
+        hdExpression = c.findSRDFormula ? findSRDRoll(hdValue) : hdValue;
+        hdExpression = c.HDis1eD8s ? buildHD1eExpression(hdExpression) : hdExpression;
+
+        if(!hdExpression || 0 === hdExpression) {
+            return { rolled: false, reason: `Hit dice not rolled: ${c.hitDiceAttribute} did not contain a usable dice expression.` };
+        }
+
+        if(c.useConBonus) {
+            const conValue = await getSheetValue(characterId, c.conBonusAttribute);
+
+            if(undefined !== conValue) {
+                conExpression = c.conBonusIsStat
+                    ? Math.round((parseInt(conValue, 10) - 10) / 2)
+                    : parseInt(conValue, 10);
+
+                bonus = conExpression * _.reduce(`${hdExpression}`.match(/(\d+)d\d+/g) || [], (m, die) => {
+                    m += parseInt(die.match(/(\d+)d\d+/)[1], 10);
+                    return m;
+                }, 0);
+            }
+        }
+
+        return new Promise((resolve) => {
+            sendChat('', '/r ' + hdExpression + '+' + bonus, (r) => {
+                let hp = 0;
+
+                _.each(r, (subr) => {
+                    let val = JSON.parse(subr.content);
+                    if(_.has(val, 'total')) {
+                        hp += val.total;
+                    }
+                });
+
+                sets[bar + '_value'] = Math.max(hp, 1);
+                sets[bar + '_max'] = Math.max(hp, 1);
+                obj.set(sets);
+
+                resolve({
+                    rolled: true,
+                    hp: Math.max(hp, 1),
+                    bar: `Bar${c.bar}`
+                });
+            });
+        });
+    };
+
+    const getTokenName = (token) => {
+        let name = token && token.get('name');
+        return name && name.trim() ? name.trim() : 'Unnamed token';
+    };
+
+    const formatTokenNames = (names, maxNames = 5) => {
+        if(!names || !names.length) {
+            return '';
+        }
+
+        let shown = names.slice(0, maxNames).map(n => ch(n)).join(', ');
+        let remaining = names.length - maxNames;
+
+        if(remaining > 0) {
+            shown += `, and ${remaining} more`;
+        }
+
+        return shown;
+    };
+
+    const rollSelectedTokens = async (msg, who) => {
+        const selected = (msg.selected || [])
+            .map(o => getObj('graphic', o._id))
+            .filter(g => undefined !== g);
+
+        if(!selected.length) {
+            sendChat('MonsterHitDice', `/w "${who}" No tokens selected.`);
+            return;
+        }
+
+        let results = [];
+
+        for(const o of selected) {
+            tokenIds.push(o.id);
+
+            try {
+                let result = await rollHitDice(o);
+                result.tokenName = getTokenName(o);
+                results.push(result);
+            } catch(e) {
+                results.push({
+                    rolled: false,
+                    reason: `Hit dice not rolled: ${e.message || e}`,
+                    tokenName: getTokenName(o)
+                });
+            }
+        }
+
+        const rolled = results.filter(r => r && r.rolled).length;
+        const skipped = results.filter(r => r && !r.rolled && !r.silent);
+
+        let output = [];
+
+        if(rolled) {
+            output.push(`Rolled hit dice for ${rolled} token(s).`);
+        }
+
+        if(skipped.length) {
+            const grouped = _.groupBy(skipped, r => r.reason || 'Hit dice not rolled.');
+
+            _.each(grouped, (items, reason) => {
+                const names = items.map(i => i.tokenName);
+                const nameText = formatTokenNames(names, 5);
+
+                output.push(`${reason} for ${items.length} token(s).${nameText ? ` Tokens: ${nameText}.` : ''}`);
+            });
+        }
+
+        if(!output.length) {
+            output.push('Hit dice not rolled.');
+        }
+
+        sendChat('MonsterHitDice', `/w "${who}" ${output.join('<br>')}`);
+    };
+
+    const handleInput = async (msg) => {
+        if(msg.type !== 'api' || !/^!mhd(\b|$)/i.test(msg.content)) {
+            return;
+        }
+
+        if(!playerIsGM(msg.playerid)) {
+            sendChat('MonsterHitDice', `/w "${msg.who}" Only the GM can use this command.`);
+            return;
+        }
+
+        let who = (getObj('player', msg.playerid) || { get: () => 'API' }).get('_displayname');
+        let args = parseArgs(msg.content);
+
+        if(_.has(args, 'config')) {
+            showConfig(who);
+            return;
+        }
+
+        if(applyConfigArgs(args)) {
+            showConfig(who);
+            return;
+        }
+
+        await rollSelectedTokens(msg, who);
+    };
+
+    const saveTokenId = (obj) => {
+        tokenIds.push(obj.id);
+
+        setTimeout(((id) => {
+            return () => {
+                let token = getObj('graphic', id);
+                if(token) {
+                    rollHitDice(token).catch(e => log(`MHD - rollHitDice failed: ${e.message || e}`));
+                }
+            };
+        })(obj.id), 100);
+    };
+
+    const registerEventHandlers = () => {
+        on('chat:message', (msg) => {
+            handleInput(msg).catch(e => log(`MHD - handleInput failed: ${e.message || e}`));
+        });
+
+        on('add:graphic', saveTokenId);
+
+        on('change:graphic', (obj) => {
+            rollHitDice(obj).catch(e => log(`MHD - rollHitDice failed: ${e.message || e}`));
+        });
+    };
+
+    on('ready', () => {
+        checkInstall();
+        registerEventHandlers();
+    });
+
+    return {};
+})();
+
+{ try { throw new Error(''); } catch(e) { API_Meta.MonsterHitDice.lineCount = (parseInt(e.stack.split(/\n/)[1].replace(/^.*:(\d+):.*$/, '$1'), 10) - API_Meta.MonsterHitDice.offset); } }
