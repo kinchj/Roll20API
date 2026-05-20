@@ -214,7 +214,7 @@ const MonsterHitDice = (() => { // eslint-disable-line no-unused-vars
         let content = `<div style="background:#d9ecff;border:2px solid #000;border-radius:6px;padding:6px;line-height:1.35;text-align:left;">`;
         content += `<div style="font-weight:bold;text-align:center;margin:0 0 4px 0;">MonsterHitDice Config</div>`;
 
-        content += `<div><b>Bar:</b> Bar${c.bar} ${makeButton('Set', '!mhd --bar|?{Bar|1|2|3}')}</div>`;
+        content += `<div><b>Bar:</b> Bar${c.bar} ${makeButton('Set', '!mhd --bar|?{Bar|1|2|3|4}')}</div>`;
         content += `<div><b>Sheet:</b> ${ch(c.sheet)} ${makeButton('Set', `!mhd --sheet|${sheetQuery}`)}</div>`;
 
         content += `<hr style="border:0;border-top:1px solid #000;margin:5px 0;">`;
@@ -243,7 +243,7 @@ const MonsterHitDice = (() => { // eslint-disable-line no-unused-vars
 
         if(_.has(args, 'bar')) {
             let bar = parseInt(args.bar, 10);
-            if(_.contains([1, 2, 3], bar)) {
+            if(_.contains([1, 2, 3, 4], bar)) {
                 c.bar = bar;
                 changed = true;
             }
